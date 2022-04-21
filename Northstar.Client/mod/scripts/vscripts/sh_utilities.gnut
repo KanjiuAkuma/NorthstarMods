@@ -1,0 +1,8 @@
+globalize_all_functions
+
+void function printDev( string message )
+{
+    #if DEV
+    print( message )
+    #endif
+}

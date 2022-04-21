@@ -1,0 +1,239 @@
+untyped
+
+/// Notes
+// seems there is button.SetNavUp/Down/Left/Right
+// will need that for nav dummy buttons
+
+global function GridUtility_CreateGrid
+global function GridUtility_FocusGrid
+
+global struct GridButton
+{
+    var dataPanel
+    var trigger
+
+    int gridIndex = -1
+    int actualIndex = -1
+
+    bool focused = false
+}
+
+global typedef ButtonUpdater void functionref( GridButton )
+
+global struct Grid
+{
+
+    var gridPanel
+    array < array < GridButton > > buttons
+    void functionref ( GridButton ) updateButton
+
+    int rows = -1
+    int columns = -1
+    int buttonsPerPage = -1
+    int totalButtons = -1
+
+    int lastSelectedId = 0
+
+    vector mouseDeltaBuffer = < 0, 0, 0 >
+    int scrollOffset = 0    
+}
+
+Grid function GridUtility_CreateGrid(
+        // actual ui element, number of rows to display, number of columns to display
+        var gridPanel, int rows, int columns, int totalButtons,
+        // called to initialize/update the buttons contents
+        void functionref( GridButton ) update,
+        // focus/activate callbacks, can be null
+        void functionref( GridButton ) onFocusGain = null,
+        void functionref( GridButton ) onFocusLose = null,
+        void functionref( GridButton ) onActivate = null,
+        // wrap callbacks, should be both set or both null
+        // if both null the grid wraps within itself
+        void functionref() onHitStart = null, // called if the selection moves out of the grid towards top
+        void functionref() onHitEnd = null // called if the selection moves out of the grid towards bottom
+    )
+{
+    printDev( "GridUtility_CreateGrid" )
+    Grid grid
+    grid.gridPanel = gridPanel
+
+    // todo: enusre 0 < rows && 0 < cols
+    grid.rows = rows
+    grid.columns = columns
+    grid.buttonsPerPage = rows * columns
+    grid.totalButtons = totalButtons
+
+    // figure out number of rows and columns avaialable
+    printDev( "GridUtility_CreateGrid 1" )
+    int maxGridRows = 0
+    while ( true )
+    {
+        try
+        {
+            var element = Hud_GetChild( gridPanel, "GridButton" + maxGridRows + "x0" )
+            maxGridRows ++
+        }
+        catch ( ex ) { break }
+    }
+
+    int maxGridColumns = 0
+    while ( true )
+    {
+        try
+        {
+            var element = Hud_GetChild( gridPanel, "GridButton0x" + maxGridColumns )
+            maxGridColumns ++
+        }
+        catch ( ex ) { break }
+    }
+
+    // todo: ensure rows < actualRows && cols < actualCols
+    printDev( "GridUtility_CreateGrid 2" )
+    var gridSize = Hud_GetSize( grid.gridPanel )
+    float gridWidth = float( gridSize[ 0 ] )
+    float gridHeight = float( gridSize[ 1 ] )
+
+    float buttonWidth = gridWidth / float( grid.columns )
+    float buttonHeight = gridHeight / float ( grid.rows )
+
+    printDev( "--------------------------------------------------" )
+    printDev( "GridInfo:" )
+    printDev( "  requested buttons: (" + grid.rows + "x" + grid.columns + ")" )
+    printDev( "  available buttons: (" + maxGridRows + "x" + maxGridColumns + ")" )
+    printDev( "  available size: (" + gridWidth + ", " + gridHeight + ")" )
+    printDev( "  button size: (" + buttonWidth + ", " + buttonHeight + ")" )
+    printDev( "--------------------------------------------------" )
+
+
+    // initialize used buttons
+    printDev( "GridUtility_CreateGrid 3" )
+    grid.updateButton = update
+    for( int r = 0; r < maxGridRows; r++ )
+    {
+        array< GridButton > row
+
+        for( int c = 0; c < maxGridColumns; c++ )
+        {
+            string id = "" + r + "x" + c
+            var dataPanel = Hud_GetChild( gridPanel, "GridButton" + id )
+            var trigger = Hud_GetChild( gridPanel, "GridButton" + id + "_Trigger" )
+            if ( r < grid.rows && c < grid.columns )
+            {
+                GridButton button
+                button.dataPanel = dataPanel
+                button.trigger = trigger
+                button.gridIndex = r * grid.columns + c
+                button.actualIndex = button.gridIndex
+                row.append( button )
+
+                Hud_SetSize( button.dataPanel, buttonWidth, buttonHeight )
+                Hud_SetSize( button.trigger, buttonWidth, buttonHeight )
+                update( button )
+
+                // add event handlers
+                if ( onFocusGain != null )
+                {
+                    AddButtonEventHandler( button.trigger, UIE_GET_FOCUS, void function( var ignored ) : ( button, onFocusGain ) { onFocusGain( button ) } )
+                }
+
+                if ( onFocusLose != null )
+                {
+                    AddButtonEventHandler( button.trigger, UIE_LOSE_FOCUS, void function( var ignored ) : ( button, onFocusLose ) { onFocusLose( button ) } )
+                }
+                if ( onActivate != null )
+                {
+                    AddButtonEventHandler( button.trigger, UIE_CLICK, void function( var ignored ) : ( button, onActivate ) { onActivate( button ) } )
+                }
+            }
+            else {
+                Hud_SetVisible( dataPanel, false )
+                Hud_SetVisible( trigger, false )
+                Hud_SetEnabled( dataPanel, false )
+                Hud_SetEnabled( trigger, false )
+            }
+        }
+
+        grid.buttons.append( row )
+    }
+
+    var dummyTop = Hud_GetChild( gridPanel, "DummyTop" )
+    var dummyBottom = Hud_GetChild( gridPanel, "DummyBottom" )
+
+    // set up nav
+    for( int r = 0; r < grid.rows; r++ )
+    {
+        for( int c = 0; c < grid.columns; c++ )
+        {
+            var above = null
+            if ( r == 0 )
+            {
+                if ( onHitStart == null )
+                    above = grid.buttons[ grid.rows - 1][ c ].trigger
+                else
+                    above = dummyTop
+            }
+            else
+                above = grid.buttons[ r - 1 ][ c ].trigger
+
+            var below = null
+            if ( r == grid.rows - 1 )
+            {
+                if ( onHitEnd == null )
+                    below = grid.buttons[ 0 ][ c ].trigger
+                else
+                    below = dummyBottom
+            }
+            else
+                below = grid.buttons[ r + 1 ][ c ].trigger
+
+            var before = null
+            if ( r == 0 && c == 0 )
+            {
+                if ( onHitStart == null )
+                    before = grid.buttons[ grid.rows - 1 ][ grid.columns - 1 ].trigger
+                else
+                    before = dummyTop
+            }
+            else if ( c == 0 )
+                before = grid.buttons[ r - 1 ][ grid.columns - 1].trigger
+            else
+                before = grid.buttons[ r ][ c - 1].trigger
+
+            var after = null
+            if ( r == grid.rows - 1 && c == grid.columns - 1 )
+            {
+                if ( onHitEnd == null)
+                    after = grid.buttons[ 0 ][ 0 ].trigger
+                else
+                    after = dummyBottom
+            }
+            else if ( c == grid.columns - 1 )
+                after = grid.buttons[ r + 1 ][ 0 ].trigger
+            else
+                after = grid.buttons[ r ][ c + 1 ].trigger
+
+            var button = grid.buttons[ r ][ c ].trigger
+            button.SetNavUp( above )
+            button.SetNavDown( below )
+            button.SetNavLeft( before )
+            button.SetNavRight( after )
+
+        }
+    }
+
+    printDev( "GridUtility_CreateGrid Complete" )
+    return grid
+}
+
+// focuses the last selected button in the grid
+// if overwriteIndex is given it focues the button at given index (tl2br) in the grid
+void function GridUtility_FocusGrid( Grid grid, int overwriteIndex = -1 )
+{
+    if ( overwriteIndex != -1 )
+        grid.lastSelectedId = overwriteIndex
+
+    int rowIndex = grid.lastSelectedId / grid.rows
+    int columnIndex = grid.lastSelectedId % grid.columns
+    printDev( "GridUtility_FocusGrid: " + rowIndex + " " + columnIndex )
+    Hud_SetFocused( grid.buttons[ rowIndex ][ columnIndex ].trigger )
+}

@@ -35,6 +35,10 @@
 	],
 	"Scripts": [
 		{
+		  "Path": "sh_utilities.gnut",
+		  "RunOn": "CLIENT || UI || SERVER"
+		},
+		{
 			"Path": "_custom_codecallbacks_client.gnut",
 			"RunOn": "CLIENT",
 			"ClientCallback": {
@@ -44,6 +48,10 @@
 		{
 			"Path": "client/cl_chat.gnut",
 			"RunOn": "CLIENT"
+		},
+		{
+			"Path": "ui/grid.gnut",
+			"RunOn": "UI"
 		},
 		{
 			"Path": "ui/menu_ns_modmenu.nut",
@@ -72,6 +80,13 @@
 			"RunOn": "UI",
 			"UICallback": {
 				"Before": "AddNorthstarServerBrowserMenu"
+			}
+		},
+		{
+			"Path": "ui/menu_ns_mode_select.nut",
+			"RunOn": "UI",
+			"UICallback": {
+			  	"Before": "AddModeSelectMenu"
 			}
 		},
 		{
